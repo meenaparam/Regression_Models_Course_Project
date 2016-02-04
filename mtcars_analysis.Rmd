@@ -1,0 +1,118 @@
+---
+title: "Is an automatic or manual transmission better for MPG?"
+author: "Meenakshi Parameshwaran"
+date: "4 February 2016"
+output: pdf_document
+fontsize: 10pt
+---
+
+```{r options, echo = F}
+library(knitr)
+opts_chunk$set(message = F, warnings = F, tidy = T)
+```
+
+## Executive Summary
+In this project, I use the `mtcars` data set of a collection of cars to explore the relationship between a set of variables and miles per gallon (MPG) (outcome). To learn more about the dataset in R, type `?mtcars`. 
+
+I answer the following two questions:
+
+**1. Is an automatic or manual transmission better for MPG?**
+
+In a model with just one variable, manual transmission appears to be significantly better for MPG. A manual transmission gives an increase of 8.09 (95% confidence interval: 4.78 - 10.40) miles per gallon compared to an automatic transmission.
+
+**2. What is the MPG difference between automatic and manual transmissions?**
+
+Once other variables (number of cylinders and car weight) are included in the model, there is no significant effect of transmission type on MPG. This means it is no longer possible to estimate the MPG difference between automatic and manual transmissions with any certainty.
+
+## Methods
+
+### Pre-processing and exploratory analysis
+
+I first prepare the data for analysis (code not shown). Then I explore the key variables in the data.
+```{r exploration, include=F}
+library(datasets)
+cars <- mtcars
+# summary(cars)
+
+# recode the transmission variable
+cars$am_lab <- factor(cars$am, levels = c(0,1), labels = c("Automatic", "Manual"))
+```
+
+This histogram shows the distribution of miles per gallon by car transmission type. There appears to be a difference.  
+
+```{r figure1, fig.height=3, fig.width=6, fig.align = "center", echo = FALSE}
+# exploratory plot
+library(ggplot2)
+library(scales) # for percentages on the y-axis
+
+ggplot(data = cars, aes(x = mpg, fill = am_lab)) +
+    geom_histogram(aes(y = (..count..)/(sum(..count..))), binwidth = 1, position = "dodge") +
+    geom_density(alpha = 0.3) +
+    scale_y_continuous(labels = percent) +
+    ggtitle("Histogram of miles per gallon by transmission type") +
+    xlab ("Miles per gallon") +
+    ylab ("Percentage of cars") +
+    guides(fill=guide_legend(title=NULL))
+```
+
+
+### Modelling strategy
+In the first model, I control just for transmission type. The second model is a repeat of the first model but with outliers excluded. The third model additionally controls for number of cylinders. The fourth model additionally controls for the car's weight (in 1000lbs).
+
+```{r modelling part 1, include=F}
+fit1 <- lm(mpg ~ am, data = cars)
+```
+
+```{r remove outliers, include = F}
+# create a new dataset that removes these three outliers
+library(dplyr)
+# get the dfbetas for transmission variable
+cars$dfbeta_fit1 <- round(dfbetas(fit1)[,2],3) 
+summary(cars$dfbeta_fit1) # see the min and max of the dfbetas
+# remove the outlier cases according to their extreme dfbeta values
+cars_no <- filter(cars, (cars$dfbeta_fit1 < 0.4 & cars$dfbeta_fit1 > -0.4)) 
+```
+
+```{r modelling part 2}
+fit1 <- lm(mpg ~ am, data = cars)
+fit2 <- lm(mpg ~ am, data = cars_no)
+fit3 <- lm(mpg ~ am + factor(cyl), data = cars_no)
+fit4 <- lm(mpg ~ am + factor(cyl) + I(wt - mean(wt)), data = cars_no)
+```
+
+Some diagnostic plots of the first model can be seen in the Appendix. I use these to identify and remove three outlier cars due to high residuals and leverage: Toyota Corolla, Ford Pantera L, and Maserati Bora. I estimate models 2-4 on a dataset reduced from 32 cars to 29 cars.
+
+## Results
+
+Model 1 output shows that, holding all else constant, *transmission type is significantly associated with miles per gallon*. The effect remains even when outliers are removed from the dataset (model 2). In model 2, a manual transmission gives an increase of `r round(coef(fit2)[2], 2)` (95% confidence intervals: `r round(confint(fit2)[2,],2)`) miles per gallon compared to an automatic transmission. 
+
+However, the inclusion of number of cylinders and mean car weight into the model (model 4) renders the effect of transmission type **insignificant** (p > 0.05). This means that it is no longer possible to estimate the MPG difference between automatic and manual transmissions with 95% confidence. The coefficient for manual (vs. automatic) transmission is `r round(coef(fit4)[2],2)` (95% confidence interval: `r round(confint(fit4)[2,],2)`). The confidence intervals include 0, meaning no significant difference between transmission types.  
+
+```{r modelling part 3, echo = FALSE, results = "asis"}
+library(texreg)
+texreg(list(fit1, fit2, fit3, fit4),
+       float.pos = "h",
+       custom.model.names = c("M1", "M2","M3", "M4"),
+       caption = "Linear regression model output",
+       custom.coef.names = c("Intercept", "Manual (vs. automatic)", "Six cylinders (vs. 4)", "Eight cylinders (vs. 4)", "Mean weight (1000 lbs"))
+```
+
+The ANOVA output below shows that including number of the cylinders in the model (second row) significantly improves it compared to just including transmission type (first row). Adding car weight to the model (third row) gives a further signficant improvement to model fit.
+
+```{r anova, echo = FALSE, results = "asis"}
+# check model fit
+myanova <- anova(fit2, fit3, fit4)
+library(knitr)
+kable(myanova, caption = "Model fit using ANOVA")
+```
+
+------
+
+## Appendix   
+
+```{r appendix, fig.height=4, fig.width=7, fig.pos = "center"}
+plot(fit1, which = 1) # residuals versus fitted
+plot(fit1, which = 5) # there are three cars that have high leverage
+plot(fit1, which = 2) # QQ plot shows three outlier cars
+plot(fit1, which = 4) # cook's distance
+```
